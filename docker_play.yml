@@ -1,0 +1,63 @@
+---
+- name: Install Docker and Log In to Docker Hub Securely (Localhost)
+  hosts: localhost
+  connection: local
+  become: yes
+  vars_files:
+    - /etc/ansible/secrets.yml  # Secure credentials file
+
+  tasks:
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_installed
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Install dependencies
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+      when: docker_installed.rc != 0 and ansible_os_family == "Debian"
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: docker_installed.rc != 0
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable"
+        state: present
+      when: docker_installed.rc != 0
+
+    - name: Install Docker
+      apt:
+        name: docker-ce
+        state: present
+      when: docker_installed.rc != 0
+
+    - name: Ensure Docker service is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+      when: docker_installed.rc == 0
+
+    - name: Check if already logged in to Docker Hub
+      command: docker info
+      register: docker_login_status
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Log in to Docker Hub securely
+      command: docker login -u "{{ dockerhub_user }}" -p "{{ dockerhub_password }}"
+      when: "'Username: ' ~ dockerhub_user not in docker_login_status.stdout"
+
+    - name: Verify login
+      debug:
+        msg: "Docker login successful!"
